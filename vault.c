@@ -5,35 +5,28 @@
 int vault_close(VAULT *vault, int flag_discard)
 {
     int i = 0;
-    if (flag_discard > 0)
-        zip_discard(vault->archive);
-    else
-        i = zip_close(vault->archive);
+    if (vault->archive){
+        if (flag_discard > 0)
+            zip_discard(vault->archive);
+        else
+            i = zip_close(vault->archive);
+    }
+    free(vault->encryption_key);
+    if (vault->exclude_suffix) free(vault->exclude_suffix);
+    free(vault->source);
     free(vault);
     return i;
 }
 
 VAULT *vault_refresh(VAULT* vault)
 {
-    char *enc_key, *source, *exclude_suf = NULL; // could be null
-
-    // copy so as to keep values after vault is freed
-    enc_key = malloc(strlen(vault->encryption_key) + 1);
-    source = malloc(strlen(vault->source) + 1);
-
-    strcpy(enc_key, vault->encryption_key);
-    strcpy(source, vault->source);
-    // handle if exclude suffix is null
-    if (vault->exclude_suffix){
-        exclude_suf = malloc(strlen(vault->exclude_suffix) + 1);
-        strcpy(exclude_suf, vault->exclude_suffix);        
-    }
     int i = zip_close(vault->archive);
     if (i < 0) return NULL;
-    free(vault);
 
     int err = 0;
-    VAULT* new_vault = vault_open(source, enc_key, exclude_suf, 0, &err);
+    VAULT* new_vault = vault_open(vault->source, vault->encryption_key, vault->exclude_suffix, 0, &err);
+    if (err < 0) return NULL;
+    err = vault_close(vault, 0);
     if (err < 0) return NULL;
     return new_vault;
 }
@@ -49,9 +42,17 @@ VAULT *vault_open(const char *filename, char *key, char* ex_suffix, int create_f
     VAULT *vault = malloc(sizeof(VAULT));
     vault->archive = zip_open(filename, flag, errorp);
     if (!vault->archive) return NULL;
-    vault->source = (char*)filename;
-    vault->encryption_key = key;
-    vault->exclude_suffix = ex_suffix;
+
+    vault->encryption_key = malloc(strlen(vault->encryption_key) + 1);
+    vault->source = malloc(strlen(vault->source) + 1);
+
+    strcpy(vault->encryption_key, key);
+    strcpy(vault->source, filename);
+
+    if (ex_suffix){
+        vault->exclude_suffix = malloc(strlen(ex_suffix) + 1);
+        strcpy(vault->exclude_suffix, ex_suffix);        
+    }
     return vault;
 }
 
