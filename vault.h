@@ -41,6 +41,9 @@ int vault_close(VAULT *vault, int flag_discard);
 // Returns NULL if unsuccessful.
 VAULT *vault_refresh(VAULT* vault);
 
+// Frees memory allocated for the call to vault_list().
+void vault_list_free(vault_stat **list);
+
 // Returns a pointer to pointers to item information, the last of the pointers being NULL.
 // If there is nothing in the archive, only NULL is returned.
 // Setting flag_include_all to a number>0 will list all items, including those with the exclude suffix.

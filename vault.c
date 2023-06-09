@@ -159,6 +159,12 @@ int vault_put(VAULT *vault, const char *filebuf, size_t filesize, const char *fi
     return n;
 }
 
+void vault_list_free(vault_stat **list){
+    for (int i=0; list[i] != NULL; i++)
+        free(list[i]);
+    free(list);
+}
+
 int vault_rotate_key(VAULT *vault, char *new_key)
 {
     char *data = NULL;
