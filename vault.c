@@ -18,17 +18,21 @@ int vault_close(VAULT *vault, int flag_discard)
     return i;
 }
 
-VAULT *vault_refresh(VAULT* vault)
+int vault_refresh(VAULT **vault)
 {
-    int i = zip_close(vault->archive);
-    if (i < 0) return NULL;
+    if ((zip_close((*vault)->archive)) < 0) return -1;
 
     int err = 0;
-    VAULT* new_vault = vault_open(vault->source, vault->encryption_key, vault->exclude_suffix, 0, &err);
-    if (err < 0) return NULL;
-    err = vault_close(vault, 0);
-    if (err < 0) return NULL;
-    return new_vault;
+    VAULT* new_vault = vault_open((*vault)->source, (*vault)->encryption_key, (*vault)->exclude_suffix, 0, &err);
+    if (!new_vault)
+        return -2;
+
+    free((*vault)->encryption_key);
+    free((*vault)->exclude_suffix);
+    free((*vault)->source);
+
+    *vault = new_vault;
+    return 0;
 }
 
 VAULT *vault_open(const char *filename, char *key, char* ex_suffix, int create_flag, int *errorp)
@@ -43,8 +47,8 @@ VAULT *vault_open(const char *filename, char *key, char* ex_suffix, int create_f
     vault->archive = zip_open(filename, flag, errorp);
     if (!vault->archive) return NULL;
 
-    vault->encryption_key = malloc(strlen(vault->encryption_key) + 1);
-    vault->source = malloc(strlen(vault->source) + 1);
+    vault->encryption_key = malloc(strlen(key) + 1);
+    vault->source = malloc(strlen(filename) + 1);
 
     strcpy(vault->encryption_key, key);
     strcpy(vault->source, filename);
@@ -178,7 +182,6 @@ int vault_rotate_key(VAULT *vault, char *new_key)
     {
         finfo = calloc(256, sizeof(int));
         zip_stat_init(finfo);
-
         if ((zip_stat_index(vault->archive, count, 0, finfo)) < 0) {
             free(finfo);
             return -1;
@@ -196,6 +199,8 @@ int vault_rotate_key(VAULT *vault, char *new_key)
         free(finfo);
         count++;
     }
-    vault->encryption_key = new_key;
+    free(vault->encryption_key);
+    vault->encryption_key = malloc(strlen(new_key) + 1);
+    strcpy(vault->encryption_key, new_key);
     return 0;
 }

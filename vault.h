@@ -39,7 +39,7 @@ int vault_close(VAULT *vault, int flag_discard);
 
 // Saves changes to the vault, and reopens the vault with the same properties as the previous one.
 // Returns NULL if unsuccessful.
-VAULT *vault_refresh(VAULT* vault);
+int vault_refresh(VAULT **vault);
 
 // Frees memory allocated for the call to vault_list().
 void vault_list_free(vault_stat **list);
