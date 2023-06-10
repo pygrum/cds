@@ -23,9 +23,9 @@ int vault_refresh(VAULT **vault)
     if ((zip_close((*vault)->archive)) < 0) return -1;
 
     int err = 0;
-    VAULT* new_vault = vault_open((*vault)->source, (*vault)->encryption_key, (*vault)->exclude_suffix, 0, &err);
+    VAULT *new_vault = vault_open((*vault)->source, (*vault)->encryption_key, (*vault)->exclude_suffix, 0, &err);
     if (!new_vault)
-        return -2;
+        return err;
 
     free((*vault)->encryption_key);
     free((*vault)->exclude_suffix);
