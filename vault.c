@@ -13,19 +13,58 @@ int vault_close(VAULT *vault, int flag_discard)
     }
     free(vault->encryption_key);
     if (vault->exclude_suffix) free(vault->exclude_suffix);
+
+    zip_source_free(vault->zip_source);
     free(vault->source);
     free(vault);
     return i;
+}
+
+char *vault_close_buffer(VAULT *vault)
+{
+    if (vault->archive){
+        if ((zip_close(vault->archive)) < 0) return NULL;
+    }
+    free(vault->encryption_key);
+    if (vault->exclude_suffix) free(vault->exclude_suffix);
+
+    // return null if source isn't open
+    if (!vault->zip_source || zip_source_is_deleted(vault->zip_source))
+    {
+        return NULL;
+    }
+    zip_stat_t zst;
+    if (zip_source_stat(vault->zip_source, &zst) < 0) {
+        return NULL;
+    }
+    int size = zst.size;
+    void *data;
+    if (zip_source_open(vault->zip_source) < 0) {
+        return NULL;
+    }
+    if ((data = malloc(size)) == NULL) {
+        zip_source_close(vault->zip_source);
+        return NULL;
+    }
+    if ((zip_uint64_t)zip_source_read(vault->zip_source, data, size) < size) {
+        zip_source_close(vault->zip_source);
+        free(data);
+        return NULL;
+    }
+    zip_source_close(vault->zip_source);
+    zip_source_free(vault->zip_source);
+    if (vault->source) free(vault->source);
+    free(vault);
+    return data;
 }
 
 int vault_refresh(VAULT **vault)
 {
     if ((zip_close((*vault)->archive)) < 0) return -1;
 
-    int err = 0;
-    VAULT *new_vault = vault_open((*vault)->source, (*vault)->encryption_key, (*vault)->exclude_suffix, 0, &err);
+    VAULT *new_vault = vault_open((*vault)->source, (*vault)->encryption_key, (*vault)->exclude_suffix, 0);
     if (!new_vault)
-        return err;
+        return -1;
 
     free((*vault)->encryption_key);
     free((*vault)->exclude_suffix);
@@ -35,20 +74,20 @@ int vault_refresh(VAULT **vault)
     return 0;
 }
 
-VAULT *vault_open(const char *filename, char *key, char* ex_suffix, int create_flag, int *errorp)
+VAULT *vault_open(const char *filename, char *key, char* ex_suffix, int create_flag)
 {
-    int flag = 0;
-    if (create_flag) flag = ZIP_CREATE; 
     // must create with encryption key
     if (!key) return NULL;
     zip_t *arch = NULL;
 
     VAULT *vault = malloc(sizeof(VAULT));
-    vault->archive = zip_open(filename, flag, errorp);
+    int errorp;
+    vault->archive = zip_open(filename, create_flag, &errorp);
     if (!vault->archive) return NULL;
 
     vault->encryption_key = malloc(strlen(key) + 1);
     vault->source = malloc(strlen(filename) + 1);
+    vault->zip_source = NULL;
 
     strcpy(vault->encryption_key, key);
     strcpy(vault->source, filename);
@@ -56,6 +95,9 @@ VAULT *vault_open(const char *filename, char *key, char* ex_suffix, int create_f
     if (ex_suffix){
         vault->exclude_suffix = malloc(strlen(ex_suffix) + 1);
         strcpy(vault->exclude_suffix, ex_suffix);        
+    }
+    else {
+        vault->exclude_suffix = NULL;
     }
     return vault;
 }
@@ -151,13 +193,13 @@ vault_stat **vault_list_items(VAULT *vault, int flag_include_all)
     return stat_ptr;
 }
 
-int vault_put(VAULT *vault, const char *filebuf, size_t filesize, const char *filename)
+int vault_put(VAULT *vault, const char *filebuf, size_t filesize, int flag_ovrwrt, const char *filename)
 {
     int errCode = 0;
     zip_source_t *s = NULL;
     if ((s=zip_source_buffer(vault->archive, filebuf, filesize, 0)) == NULL) return -1;
     int n, err = 0;
-    n = zip_file_add(vault->archive, filename, s, ZIP_FL_ENC_UTF_8);
+    n = zip_file_add(vault->archive, filename, s, flag_ovrwrt || ZIP_FL_ENC_UTF_8);
     if (n < 0) return n;
     err = zip_file_set_encryption(vault->archive, n, ZIP_EM_AES_256, vault->encryption_key);
     if (err < 0) return err;
@@ -203,4 +245,37 @@ int vault_rotate_key(VAULT *vault, char *new_key)
     vault->encryption_key = malloc(strlen(new_key) + 1);
     strcpy(vault->encryption_key, new_key);
     return 0;
+}
+
+VAULT *vault_open_from_buffer(const void *buf, size_t bufsize, char *key, char* ex_suffix)
+{
+    // must create with encryption key
+    if (!key) return NULL;
+    zip_t *arch = NULL;
+
+    VAULT *vault = malloc(sizeof(VAULT));
+    zip_error_t *error;
+    zip_source_t *s = zip_source_buffer_create(buf, bufsize, 0, error);
+    if (!s) return NULL;
+
+    vault->archive = zip_open_from_source(s, 0, error);
+
+    if (!vault->archive) return NULL;
+    if (error) zip_error_fini(error);
+    zip_source_keep(s);
+
+    vault->encryption_key = malloc(strlen(key) + 1);
+    vault->source = NULL;
+
+    strcpy(vault->encryption_key, key);
+
+    if (ex_suffix){
+        vault->exclude_suffix = malloc(strlen(ex_suffix) + 1);
+        strcpy(vault->exclude_suffix, ex_suffix);        
+    }
+    else {
+        vault->exclude_suffix = NULL;
+    }
+    vault->zip_source = s;
+    return vault;
 }
